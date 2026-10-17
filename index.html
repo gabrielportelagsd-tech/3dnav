@@ -86,7 +86,7 @@ body.embed #panel{width:320px}
 <script>
 /* ===== CONFIG =====
    API_BASE: URL do seu Cloudflare Worker (worker.js). Vazio = salva no navegador. */
-const API_BASE = '';
+const API_BASE = 'https://rota3d-api.seunome.workers.dev';
 const $ = s => document.querySelector(s), P = new URLSearchParams(location.search);
 const STY = {light:'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json', dark:'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'};
 const SRV = {car:'routed-car', bike:'routed-bike', foot:'routed-foot'};
