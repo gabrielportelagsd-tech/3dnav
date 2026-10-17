@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rota3D — mapa e navegação em 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<style>
+:root{--bg:rgba(255,255,255,.82);--ink:#10131c;--mut:#5d6578;--line:rgba(16,19,28,.12);--acc:#1f4bff;--onacc:#fff;--chip:rgba(16,19,28,.06);--sh:0 10px 40px rgba(20,30,70,.18)}
+[data-theme=dark]{--bg:rgba(20,24,34,.84);--ink:#eef1f8;--mut:#9aa3b8;--line:rgba(238,241,248,.14);--acc:#7aa2ff;--onacc:#0b1020;--chip:rgba(238,241,248,.08);--sh:0 10px 40px rgba(0,0,0,.5)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font-family:"Bricolage Grotesque",system-ui,sans-serif;color:var(--ink)}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+#map{position:absolute;inset:0}
+.glass{background:var(--bg);backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);border:1px solid var(--line);box-shadow:var(--sh)}
+#panel{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));left:12px;width:370px;max-width:calc(100% - 24px);max-height:calc(100% - 100px);overflow:auto;border-radius:22px;padding:14px}
+.row{display:flex;gap:8px;align-items:center}
+input{flex:1;min-width:0;font:inherit;font-size:16px;color:var(--ink);background:var(--chip);border:1px solid transparent;border-radius:14px;padding:12px 14px;outline:none}
+input:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+button{font:inherit;color:var(--ink);background:var(--chip);border:0;border-radius:999px;padding:9px 14px;cursor:pointer}
+button.on,button.pri{background:var(--acc);color:var(--onacc);font-weight:600}
+button.pri{border-radius:14px;padding:11px 16px}
+.chips{display:flex;gap:6px;margin:10px 0 2px;flex-wrap:wrap}
+#res button{display:block;width:100%;text-align:left;border-radius:12px;background:none;padding:9px 6px;font-size:14px;color:var(--mut)}
+#res button:hover{background:var(--chip)}
+#sum{display:none;margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+#sum .t{font-size:34px;font-weight:800;letter-spacing:-.03em;line-height:1}
+#sum .s{color:var(--mut);margin-top:4px;font-size:14px}
+#steps{margin:10px 0 0;padding:0;list-style:none;font-size:14px;max-height:200px;overflow:auto}
+#steps li{padding:7px 0;border-bottom:1px solid var(--line)}#steps small{color:var(--mut)}
+#fav{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+#tools{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));right:12px;display:flex;flex-direction:column;gap:8px}
+#tools button{width:44px;height:44px;padding:0;border-radius:14px;font-size:18px}
+#hud{display:none;position:absolute;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);width:min(440px,calc(100% - 24px));border-radius:24px;padding:16px 18px}
+#hud .nx{font-size:22px;font-weight:800;letter-spacing:-.02em}
+#hud .m{display:flex;justify-content:space-between;align-items:center;margin-top:10px;color:var(--mut);font-size:14px}
+#hud b{color:var(--ink);font-size:18px}
+.me{width:26px;height:26px;border-radius:50%;background:var(--acc);border:3px solid #fff;box-shadow:0 0 0 8px color-mix(in srgb,var(--acc) 25%,transparent)}
+.me i{display:block;width:0;height:0;margin:-14px 0 0 3px;border:8px solid transparent;border-bottom:12px solid #fff}
+.pin{width:20px;height:20px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#ff3b5c;border:3px solid #fff;box-shadow:var(--sh)}
+body.embed #tools .x,body.embed #fav{display:none}
+body.embed #panel{width:320px}
+@media(max-width:700px){#panel{width:calc(100% - 24px);max-height:46%}#tools{top:auto;bottom:calc(120px + env(safe-area-inset-bottom,0px))}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<section id="panel" class="glass" aria-label="Busca e rota">
+  <div class="row"><input id="q" type="search" placeholder="Para onde vamos?" autocomplete="off" aria-label="Buscar destino"></div>
+  <div id="res"></div>
+  <div class="chips" role="group" aria-label="Modo de transporte">
+    <button data-m="car" class="on">Carro</button><button data-m="bike">Bicicleta</button><button data-m="foot">A pé</button>
+  </div>
+  <div id="sum">
+    <div class="t" id="tm">—</div>
+    <div class="s" id="dt">—</div>
+    <div class="row" style="margin-top:12px">
+      <button class="pri" id="go">Iniciar navegação</button>
+      <button id="sim">Simular trajeto</button>
+    </div>
+    <ol id="steps"></ol>
+    <div class="row" style="margin-top:10px"><button id="save">Salvar destino</button></div>
+  </div>
+  <div id="fav" aria-label="Lugares salvos"></div>
+</section>
+
+<div id="tools">
+  <button id="th" title="Alternar tema claro/escuro" aria-label="Alternar tema">◐</button>
+  <button id="loc" title="Minha localização" aria-label="Minha localização">⌖</button>
+  <button id="p3" title="Inclinação 2D/3D" aria-label="Alternar 2D e 3D">3D</button>
+  <button id="emb" class="x" title="Copiar código para incorporar" aria-label="Copiar código de incorporação">&lt;/&gt;</button>
+</div>
+
+<div id="hud" class="glass" role="status" aria-live="polite">
+  <div class="nx" id="nx">—</div>
+  <div class="m"><span>Chegada <b id="eta">—</b></span><span>Resta <b id="rem">—</b></span>
+  <span><select id="spd" aria-label="Velocidade da simulação" style="font:inherit;background:var(--chip);color:var(--ink);border:0;border-radius:10px;padding:6px"><option value="1">1×</option><option value="3">3×</option><option value="8">8×</option></select></span>
+  <button id="stop">Encerrar</button></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+/* ===== CONFIG =====
+   API_BASE: URL do seu Cloudflare Worker (worker.js). Vazio = salva no navegador. */
+const API_BASE = '';
+const $ = s => document.querySelector(s), P = new URLSearchParams(location.search);
+const STY = {light:'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json', dark:'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'};
+const SRV = {car:'routed-car', bike:'routed-bike', foot:'routed-foot'};
+const SPEED = {car:14, bike:5, foot:1.4};
+let theme = P.get('theme') || localStorage.getItem('r3d-theme') || (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
+let mode = P.get('mode') || 'car', dest = null, route = null, userPos = null, nav = null, pitch3d = true;
+if (P.get('embed')) document.body.classList.add('embed');
+
+const map = new maplibregl.Map({container:'map', style:STY[theme], center:[+P.get('lng')||-46.65, +P.get('lat')||-23.56], zoom:+P.get('z')||15, pitch:+P.get('pitch')||60, bearing:+P.get('bearing')||-17, maxPitch:85});
+map.addControl(new maplibregl.NavigationControl({visualizePitch:true}), 'bottom-right');
+const meEl = document.createElement('div'); meEl.className = 'me'; meEl.innerHTML = '<i></i>';
+const me = new maplibregl.Marker({element:meEl, rotationAlignment:'map', pitchAlignment:'map'});
+const pinEl = document.createElement('div'); pinEl.className = 'pin';
+const pin = new maplibregl.Marker({element:pinEl, anchor:'bottom'});
+
+function setTheme(t){ theme = t; document.documentElement.dataset.theme = t; localStorage.setItem('r3d-theme', t); map.setStyle(STY[t]); }
+document.documentElement.dataset.theme = theme;
+
+/* camadas: prédios 3D + rota (recriadas a cada troca de tema) */
+function layers(){
+  if (map.getSource('carto') && !map.getLayer('b3d')) map.addLayer({id:'b3d', source:'carto', 'source-layer':'building', type:'fill-extrusion', minzoom:14,
+    paint:{'fill-extrusion-color': theme==='dark' ? '#2b3350' : '#d3d9e8', 'fill-extrusion-height':['coalesce',['get','render_height'],10], 'fill-extrusion-base':['coalesce',['get','render_min_height'],0], 'fill-extrusion-opacity':.92}});
+  if (!map.getSource('route')) map.addSource('route', {type:'geojson', data: route ? route.geo : {type:'FeatureCollection', features:[]}});
+  if (!map.getLayer('rc')) map.addLayer({id:'rc', type:'line', source:'route', layout:{'line-cap':'round','line-join':'round'}, paint:{'line-color': theme==='dark'?'#0b1020':'#fff','line-width':11}});
+  if (!map.getLayer('rl')) map.addLayer({id:'rl', type:'line', source:'route', layout:{'line-cap':'round','line-join':'round'}, paint:{'line-color': theme==='dark'?'#7aa2ff':'#1f4bff','line-width':6}});
+}
+map.on('style.load', layers);
+
+/* ===== utilidades ===== */
+const R = 6371000, rad = d => d*Math.PI/180;
+function hav(a,b){ const dLa=rad(b[1]-a[1]), dLo=rad(b[0]-a[0]); const x=Math.sin(dLa/2)**2+Math.cos(rad(a[1]))*Math.cos(rad(b[1]))*Math.sin(dLo/2)**2; return 2*R*Math.asin(Math.sqrt(x)); }
+function brg(a,b){ const y=Math.sin(rad(b[0]-a[0]))*Math.cos(rad(b[1])), x=Math.cos(rad(a[1]))*Math.sin(rad(b[1]))-Math.sin(rad(a[1]))*Math.cos(rad(b[1]))*Math.cos(rad(b[0]-a[0])); return (Math.atan2(y,x)*180/Math.PI+360)%360; }
+const fmtD = m => m>=1000 ? (m/1000).toFixed(m>=10000?0:1)+' km' : Math.round(m/10)*10+' m';
+const fmtT = s => { const m=Math.round(s/60); return m>=60 ? Math.floor(m/60)+' h '+String(m%60).padStart(2,'0')+' min' : Math.max(m,1)+' min'; };
+const clock = s => new Date(Date.now()+s*1000).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+const MOD = {left:'à esquerda',right:'à direita','slight left':'levemente à esquerda','slight right':'levemente à direita','sharp left':'fechando à esquerda','sharp right':'fechando à direita',uturn:'para retornar'};
+function say(s){ const m=s.maneuver, on = s.name ? ' na '+s.name : '';
+  if (m.type==='depart') return 'Siga'+on; if (m.type==='arrive') return 'Você chegou ao destino';
+  if (m.type==='roundabout'||m.type==='rotary') return 'Entre na rotatória'+on;
+  return (m.modifier==='straight'||!m.modifier ? 'Continue' : 'Vire '+(MOD[m.modifier]||''))+on; }
+
+/* ===== busca ===== */
+let tmr; $('#q').addEventListener('input', e => { clearTimeout(tmr); const v = e.target.value.trim(); if (v.length<3) { $('#res').innerHTML=''; return; }
+  tmr = setTimeout(async () => { try {
+    const r = await (await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&accept-language=pt-BR&q='+encodeURIComponent(v))).json();
+    $('#res').innerHTML = r.length ? '' : '<p style="color:var(--mut);font-size:14px">Nada encontrado. Tente incluir a cidade.</p>';
+    r.forEach(p => { const b=document.createElement('button'); b.textContent=p.display_name; b.onclick=()=>{ $('#res').innerHTML=''; $('#q').value=p.display_name.split(',')[0]; setDest(+p.lon,+p.lat,p.display_name.split(',')[0]); }; $('#res').append(b); });
+  } catch { $('#res').innerHTML='<p style="color:var(--mut);font-size:14px">Sem conexão com a busca. Tente de novo.</p>'; } }, 450); });
+map.on('click', e => { if (!nav) setDest(e.lngLat.lng, e.lngLat.lat, 'Local no mapa'); });
+
+/* ===== rota ===== */
+async function setDest(lng, lat, name){ dest = {lng, lat, name}; pin.setLngLat([lng,lat]).addTo(map); await getRoute(); }
+async function getRoute(){
+  if (!dest) return; const o = userPos || [map.getCenter().lng, map.getCenter().lat];
+  try {
+    const u = `https://routing.openstreetmap.de/${SRV[mode]}/route/v1/driving/${o[0]},${o[1]};${dest.lng},${dest.lat}?overview=full&geometries=geojson&steps=true`;
+    const j = await (await fetch(u)).json(); const r = j.routes && j.routes[0]; if (!r) throw 0;
+    const coords = r.geometry.coordinates, cum = [0]; for (let i=1;i<coords.length;i++) cum.push(cum[i-1]+hav(coords[i-1],coords[i]));
+    const steps = r.legs[0].steps, ends = []; let a = 0; steps.forEach(s => { a += s.distance; ends.push(a); });
+    // tempo estimado pelo modo; a API pública devolve só a duração de carro
+    const dur = mode==='car' ? r.duration : r.distance/SPEED[mode];
+    route = {geo:{type:'Feature', geometry:r.geometry}, coords, cum, steps, ends, total:cum[cum.length-1], dur};
+    map.getSource('route').setData(route.geo);
+    $('#tm').textContent = fmtT(dur); $('#dt').textContent = fmtD(r.distance)+' · chegada às '+clock(dur)+' · '+dest.name;
+    $('#steps').innerHTML = steps.map(s => `<li>${say(s)}<br><small>${fmtD(s.distance)}</small></li>`).join(''); $('#sum').style.display = 'block';
+    const b = coords.reduce((bb,c)=>bb.extend(c), new maplibregl.LngLatBounds(coords[0],coords[0]));
+    map.fitBounds(b, {padding:{top:90,bottom:120,left:window.innerWidth>700?420:30,right:70}, pitch:50, duration:1200});
+    parent !== window && parent.postMessage({type:'routeready', duration:dur, distance:r.distance}, '*');
+  } catch { $('#sum').style.display='block'; $('#tm').textContent='Sem rota'; $('#dt').textContent='Não encontramos um caminho para esse modo. Tente outro destino ou modo.'; }
+}
+document.querySelectorAll('.chips button').forEach(b => b.onclick = () => { mode = b.dataset.m; document.querySelectorAll('.chips button').forEach(x => x.classList.toggle('on', x===b)); getRoute(); });
+
+/* ===== navegação 3D (GPS real ou simulada) ===== */
+function placeAt(d){ const c=route.coords, cum=route.cum; let i=1; while (i<cum.length-1 && cum[i]<d) i++;
+  const t=(d-cum[i-1])/Math.max(cum[i]-cum[i-1],1e-6); return [c[i-1][0]+(c[i][0]-c[i-1][0])*t, c[i-1][1]+(c[i][1]-c[i-1][1])*t, i]; }
+function startNav(sim){
+  if (!route) return; stopNav(true); document.body.classList.add('navigating');
+  $('#panel').style.display='none'; $('#hud').style.display='block';
+  nav = {d:0, sim, last:performance.now(), bear:map.getBearing()};
+  if (!sim) nav.watch = navigator.geolocation.watchPosition(p => { const g=[p.coords.longitude,p.coords.latitude]; let best=0,bd=1e12; route.coords.forEach((c,i)=>{const k=hav(g,c); if(k<bd){bd=k;best=i;}}); nav.d=route.cum[best]; }, ()=>{ $('#nx').textContent='Sem sinal de GPS'; }, {enableHighAccuracy:true});
+  const mult = () => +$('#spd').value;
+  (function tick(now){ if (!nav) return; const dt=(now-nav.last)/1000; nav.last=now;
+    if (nav.sim) nav.d += SPEED[mode]*mult()*dt*(mode==='car'?1:1);
+    if (nav.d >= route.total) { $('#nx').textContent='Você chegou ao destino'; $('#rem').textContent='0 m'; return; }
+    const [x,y] = placeAt(nav.d), ahead = placeAt(Math.min(nav.d+35, route.total));
+    let tb = brg([x,y],[ahead[0],ahead[1]]), diff = ((tb-nav.bear+540)%360)-180; nav.bear = (nav.bear+diff*Math.min(dt*3,1)+360)%360;
+    me.setLngLat([x,y]).setRotation(nav.bear).addTo(map);
+    map.jumpTo({center:[x,y], bearing:nav.bear, pitch:pitch3d?65:0, zoom:mode==='car'?17.2:18.2});
+    const k = route.ends.findIndex(e => e > nav.d), nxt = route.steps[Math.min(k+1, route.steps.length-1)];
+    $('#nx').textContent = (k<0 ? 'Siga' : 'Em '+fmtD(route.ends[k]-nav.d)+': '+say(nxt));
+    const left = route.total-nav.d, secs = left/(route.total/route.dur);
+    $('#rem').textContent = fmtD(left)+' · '+fmtT(secs); $('#eta').textContent = clock(secs);
+    nav.raf = requestAnimationFrame(tick); })(performance.now());
+}
+function stopNav(quiet){ if (nav) { cancelAnimationFrame(nav.raf); nav.watch && navigator.geolocation.clearWatch(nav.watch); nav = null; }
+  if (!quiet) { $('#hud').style.display='none'; $('#panel').style.display='block'; map.easeTo({pitch:55, zoom:15, duration:900}); } }
+$('#go').onclick = () => { if (!navigator.geolocation) return startNav(true); startNav(false); };
+$('#sim').onclick = () => startNav(true); $('#stop').onclick = () => stopNav();
+
+/* ===== localização e controles ===== */
+function locate(fly){ navigator.geolocation && navigator.geolocation.getCurrentPosition(p => { userPos=[p.coords.longitude,p.coords.latitude]; me.setLngLat(userPos).addTo(map); fly && map.flyTo({center:userPos, zoom:16.5, pitch:60, duration:1600}); dest && getRoute(); }, ()=>{}, {enableHighAccuracy:true}); }
+$('#loc').onclick = () => locate(true); $('#th').onclick = () => setTheme(theme==='dark'?'light':'dark');
+$('#p3').onclick = () => { pitch3d = !pitch3d; $('#p3').textContent = pitch3d?'3D':'2D'; map.easeTo({pitch:pitch3d?60:0, duration:700}); };
+$('#emb').onclick = () => { const c=map.getCenter(), t = dest ? `&to=${dest.lat},${dest.lng}` : '';
+  const code = `<iframe src="${location.origin}${location.pathname}?embed=1&theme=${theme}&lat=${c.lat.toFixed(5)}&lng=${c.lng.toFixed(5)}&z=${map.getZoom().toFixed(1)}&mode=${mode}${t}" style="width:100%;height:480px;border:0;border-radius:16px" allow="geolocation"></iframe>`;
+  navigator.clipboard.writeText(code).then(()=>{ $('#emb').textContent='✓'; setTimeout(()=>$('#emb').innerHTML='&lt;/&gt;',1500); }); };
+
+/* ===== API de incorporação: window.postMessage ===== 
+   iframe.contentWindow.postMessage({type:'route', lat, lng, name}, '*')
+   {type:'theme', value:'dark'} · {type:'flyTo', lat, lng, zoom} */
+addEventListener('message', e => { const d = e.data || {};
+  if (d.type==='route') setDest(+d.lng, +d.lat, d.name||'Destino'); if (d.type==='theme') setTheme(d.value);
+  if (d.type==='flyTo') map.flyTo({center:[+d.lng,+d.lat], zoom:d.zoom||16, pitch:60}); });
+
+/* ===== lugares salvos (Cloudflare D1 via Worker, ou localStorage) ===== */
+async function places(){ if (API_BASE) { try { return await (await fetch(API_BASE+'/places')).json(); } catch { return []; } } try { return JSON.parse(localStorage.getItem('r3d-places')||'[]'); } catch { return []; } }
+async function drawFav(){ const l = await places(); $('#fav').innerHTML=''; l.forEach(p => { const b=document.createElement('button'); b.textContent=p.name; b.onclick=()=>{ setDest(p.lng,p.lat,p.name); }; $('#fav').append(b); }); }
+$('#save').onclick = async () => { if (!dest) return; const p = {name:dest.name, lat:dest.lat, lng:dest.lng};
+  if (API_BASE) await fetch(API_BASE+'/places', {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(p)});
+  else { const l = await places(); l.push(p); localStorage.setItem('r3d-places', JSON.stringify(l)); }
+  $('#save').textContent='Salvo'; setTimeout(()=>$('#save').textContent='Salvar destino',1500); drawFav(); };
+
+drawFav(); locate(!P.get('lat'));
+if (P.get('to')) { const [la,ln] = P.get('to').split(',').map(Number); map.once('load', () => setDest(ln, la, 'Destino')); }
+</script>
+</body>
+</html>
